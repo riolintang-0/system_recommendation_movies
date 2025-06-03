@@ -222,8 +222,10 @@ Hasil:
 
 ### Tags Variable
 
-![Tags Users Agg](img/)
+![Tags Users Agg](img/tags_prep_info_user.jpg)
 
+Fungsi diatas untuk mengetahui apakah `users` dapat memberikan `tags` pada `movies` yang sama lebih dari satu atau tidak (unique).
+hasil menunjukkan bahwa `max()` mendapati nilai **173**, hal ini menunjukkan bahwa `users` dapat memberikan `tags` lebih dari 1 pada `movies` yang sama.
 
 
 ```
@@ -232,163 +234,49 @@ tags_agg = tags.groupby(['userId', 'movieId'])['tag'].apply(lambda x: ','.join(x
 
 ```
 
+Hasil : 
+![After Agg](img/tags_prep_after_agg.jpg)
 
+Hasil diatas pada kolom `tags` memuat kumpulan `tags` yang diberikan `users` pada `movies` yang sama.
 
 ---
 
+### Menggabungkan *ratings* dengan *tags*
+
+```
+
+ratings_tags = pd.merge(ratings, tags_agg, on=['userId', 'movieId'], how='left')
+ratings_tags['tag'] = ratings_tags['tag'].fillna('no_tag')
+
+```
+
+Hasil:
+
+![Combine Ratings and Tags](img/combine_ratings_tags.jpg)
+
+Code diatas menggabungkan 2 df yaitu `ratings` dan `tags_agg` menjadi satu df dengan kunci yaitu **userId** dan **movieId** left join (**mempertahankan df sebelah kiri (ratings)**), kemudian mengisi missing value kolom `tags`, `movie` yang tidak memiliki nilai `tag` dengan **no_tag**
+
+
+
+### Menggabungkan All Data
+
+```
+
+full_data = pd.merge(ratings_tags, movies, on='movieId', how='left')
+
+
+```
+Hasil:
+![Combine All Data](img/combine_all_data.jpg)
+
+Hasil diatas menggabungkan 3 df yaitu `ratings_tags` dan `movies` dengan kunci `movieId` left join (**mempertahankan df sebelah kiri (ratings_tags)**)
 
 
 ## Modelling
 
-### 1. Logistic Regression
-
-![Logistic Regression](img/lr_matrix.jpg)
-![Logistic Regression](img/lr_confusion.png)
-
-Model pertama yang dilatih adalah **Logistic Regression** sebagai baseline. Model ini memprediksi probabilitas kelas target menggunakan **fungsi sigmoid/logistik**:
-
-$$
-P(y=1|x) = \frac{1}{1 + e^{-(wX + b)}}
-$$
-
-di mana:
-
-* $w$: bobot fitur
-* $X$: vektor fitur
-* $b$: bias/intersep
-
-**Parameter yang digunakan:**
-
-```python
-LogisticRegression(random_state=42)
-```
-* `random_state=42`: menjaga konsistensi hasil.
-
-- Kelebihan:
-
-  * Cepat dan efisien.
-  * Mudah diinterpretasikan.
-  * Cocok untuk relasi linier.
-
-- Kekurangan:
-
-  * Kurang efektif untuk pola non-linear.
-  * Sensitif terhadap multikolinearitas.
-
-pada model `Logistic Regression` hasil akurasi didapatkan mencapai **90%** dengan masing masing :
-
-- pada **class** 0 
-  
-  `presisi` : 67%
-
-  `recall`  : 86%
-
-  `f1-score` : 75%
-
-- pada **class** 1 
-  
-  `presisi` : 27%
-
-  `recall`  : 67%
-
-  `f1-score` : 38%
-
-- pada **class** 2 
-  
-  `presisi` : 100%
-
-  `recall`  : 67%
-
-  `f1-score` : 38%
 
 
-Hasil ini menunjukkan bahwa model ini belum bisa mengenali pola secara merata khususnya untuk **class** bernilai 1 / Prediabetes
 
-### 2. Random Forest
-
-![Random Forest](img/rf_matrix.jpg)
-![Random Forest](img/rf_confusion.png)
-
-Model ensambel berbasis pohon keputusan yang menggunakan teknik **bagging (Bootstrap Aggregating)**. Setiap decision tree dilatih dari subset acak data dan subset acak fitur, dan prediksi akhir diambil melalui **voting mayoritas** dari semua pohon.
-
-$$
-\hat{y} = \text{mode}(h_1(x), h_2(x), \dots, h_T(x))
-$$
-
-di mana:
-
-* $h_t(x)$: prediksi dari pohon ke-$t$
-* $T$: jumlah total pohon dalam hutan
-* `mode`: memilih prediksi yang paling sering muncul
-
-**Parameter yang digunakan:**
-
-```python
-RandomForestClassifier(random_state=42)
-```
-
-* `random_state=42`: menjaga replikasi hasil.
-* `n_estimators=100` digunakan sebagai default (jumlah pohon) Tidak disebutkan secara eksplisit.
-
-- Kelebihan:
-
-  * Tahan terhadap overfitting.
-  * Mampu menangani fitur yang berinteraksi dan non-linear.
-  * Memberikan feature importance.
-
-- Kekurangan:
-
-  * Interpretasi kompleks.
-  * Waktu inferensi dan konsumsi memori lebih tinggi.
-
-pada model `Random Forest` hasil akurasi didapatkan mencapai **98.5** dengan masing masing :
-
-- pada **class** 0 
-  
-  `presisi` : 88%
-
-  `recall`  : 100%
-
-  `f1-score` : 93%
-
-- pada **class** 1 
-  
-  `presisi` : 100%
-
-  `recall`  : 100%
-
-  `f1-score` : 100%
-
-- pada **class** 2 
-  
-  `presisi` : 100%
-
-  `recall`  : 98%
-
-  `f1-score` : 99%
-
-
-Hasil ini menunjukkan bahwa model ini sudah cukup baik untuk mengenali pola dari masing-masing nilai pada target.
 
 ## Evaluasi
 
-![Evaluasi](img/evaluasi.jpg)
-
-Hasil Evaluasi ini menggunakan matrix `Accuracy` , `Precision` , `Recall` , dan `F1-Score`
-1. **Accuracy**: Mengukur proporsi prediksi yang benar dibandingkan total prediksi.
-
-   $Accuracy = rac{TP + TN}{TP + TN + FP + FN}$
-
-2. **Precision**: Proporsi prediksi positif yang benar dari seluruh prediksi positif.
-
-   $Precision = rac{TP}{TP + FP}$
-
-3. **Recall**: Proporsi positif yang berhasil diprediksi dengan benar.
-
-   $Recall = rac{TP}{TP + FN}$
-
-4. **F1-Score**: Harmonik dari precision dan recall.
-
-   $F1 = 2 * rac{Precision * Recall}{Precision + Recall}$
-
-perbandingan antara `Logistic Regression` dan `Random Forest` menunjukkan bahwa `Random Forest` lebih baik tingkat akurasinya yaitu sebesar **98.5 %** , diikuti dengan matrix yang lain yang lebih tinggi menandakan bahwa `Random Forest` merupakan model yang lebih baik dibanding `Logistic Regression` pada kasus ini.
