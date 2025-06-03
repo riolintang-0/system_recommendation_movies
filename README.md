@@ -439,3 +439,81 @@ Model dilatih menggunakan loss binary crossentropy dengan optimizer Adam. RMSE d
 ![Hasil Metrik](img/cb_vis.jpg)
 
 Visualisasi ini memperlihatkan bahwa model collaborative filtering yang dikembangkan berhasil belajar dengan baik pada data training dan tetap mempertahankan performa yang konsisten pada data testing. Dengan demikian, model ini dapat diandalkan untuk memprediksi rating film pada pengguna baru secara efektif.
+
+
+#### Inferensi
+```
+def get_collaborative_recommendations(user_id, top_n=5):
+    # Cek apakah user_id ada di mapping
+    if user_id not in user_to_index:
+        print(f"UserId {user_id} tidak ditemukan.")
+        return None
+    
+    user_idx = user_to_index[user_id]
+    
+    # Semua movie index
+    all_movie_indices = list(range(num_movies))
+    
+    # Movie yang sudah dirating user
+    rated_movie_ids = df_rating[df_rating['userId'] == user_id]['movieId'].unique()
+    rated_movie_indices = [movie_to_index[movie_id] for movie_id in rated_movie_ids if movie_id in movie_to_index]
+    
+    # Movie yang belum dirating user
+    unrated_movie_indices = [i for i in all_movie_indices if i not in rated_movie_indices]
+    
+    # Prediksi rating untuk film belum dirating user
+    predictions = []
+    batch_size = 1000  # untuk efisiensi, prediksi batch
+    
+    for start in range(0, len(unrated_movie_indices), batch_size):
+        end = min(start + batch_size, len(unrated_movie_indices))
+        batch_movie_indices = unrated_movie_indices[start:end]
+        batch_user_indices = [user_idx] * len(batch_movie_indices)
+        
+        inputs = np.array([batch_user_indices, batch_movie_indices]).T
+        preds = model.predict(inputs).flatten()
+        
+        for movie_idx, pred_rating in zip(batch_movie_indices, preds):
+            predictions.append((movie_idx, pred_rating))
+    
+    # Urutkan berdasarkan prediksi rating tertinggi
+    predictions.sort(key=lambda x: x[1], reverse=True)
+    
+    # Ambil top_n rekomendasi
+    top_predictions = predictions[:top_n]
+    
+    # Ambil movieId dari index
+    recommended_movie_ids = [index_to_movie[movie_idx] for movie_idx, _ in top_predictions]
+    
+    # Ambil judul film dari dataframe movies
+    recommended_movies = movies[movies['movieId'].isin(recommended_movie_ids)][['movieId', 'title', 'year']].drop_duplicates()
+    
+    return recommended_movies
+
+def recommend_collaborative():
+    user_id_input = input("Masukkan userId untuk mendapatkan rekomendasi: ").strip()
+    
+    # Coba konversi input ke int, jika gagal langsung return error
+    try:
+        user_id = int(user_id_input)
+    except ValueError:
+        print("Input userId harus berupa angka.")
+        return
+    
+    # Cek apakah user_id ada di data
+    if user_id not in user_to_index:
+        print(f"UserId {user_id} tidak ditemukan dalam data.")
+        return
+    
+    recommendations = get_collaborative_recommendations(user_id, top_n=5)
+    
+    if recommendations is not None and not recommendations.empty:
+        print(f"Rekomendasi film untuk userId {user_id}:")
+        for _, row in recommendations.iterrows():
+            print(f"- {row['title']} {row['year']} (movieId: {row['movieId']})")
+    else:
+        print(f"Tidak ada rekomendasi yang ditemukan untuk userId {user_id}.")
+```
+
+![CB Inferensi](img/cb_inferensi.jpg)
+
