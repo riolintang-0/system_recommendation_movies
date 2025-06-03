@@ -274,9 +274,168 @@ Hasil diatas menggabungkan 3 df yaitu `ratings_tags` dan `movies` dengan kunci `
 
 ## Modelling
 
+### Content - Base Filtering
+
+#### TF-IDF
+
+```
+tfidf_vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
+tfidf_matrix = tfidf_vectorizer.fit_transform(tags_per_movie['tag'])
+
+print(f"Shape TF-IDF matrix: {tfidf_matrix.shape}")
+
+```
+Menerapkan `max_features` sebanyak 1000 agar fitur yang digunakan lebih spesifik
+
+#### Cosines Similarity
+
+```
+
+cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 
 
+```
+
+#### Inferensi
+
+```
+
+def get_recommendations_by_tag(movie_id, top_n=5):
+    # Cari indeks film
+    idx = tags_per_movie[tags_per_movie['movieId'] == movie_id].index[0]
+    
+    # Hitung similarity film lain
+    sim_scores = list(enumerate(cosine_sim[idx]))
+    
+    # Urutkan berdasarkan similarity tertinggi
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    
+    # Ambil top-n film paling mirip, kecuali film itu sendiri
+    sim_scores = sim_scores[1:top_n+1]
+    
+    # Ambil indeks film rekomendasi
+    movie_indices = [i[0] for i in sim_scores]
+    
+    # Ambil movieId dan judul film dari dataframe movies (yang sudah kamu siapkan)
+    recommended_ids = tags_per_movie.iloc[movie_indices]['movieId'].values
+    recommended_movies = movies[movies['movieId'].isin(recommended_ids)][['movieId', 'title']].drop_duplicates()
+    
+    return recommended_movies
 
 
-## Evaluasi
+def recommend_by_title_tag():
+    movie_name = input("Masukkan judul film: ").strip().lower()
+    
+    # Cari movieId berdasarkan judul (case insensitive)
+    matched = movies[movies['title'].str.lower() == movie_name]
+    
+    if matched.empty:
+        print(f"Film dengan judul '{movie_name}' tidak ditemukan. Coba lagi.")
+        return
+    
+    movie_id = matched.iloc[0]['movieId']
+    print(f"Film yang dipilih: {matched.iloc[0]['title']}")
+    
+    recommendations = get_recommendations_by_tag(movie_id)
+    
+    if recommendations.empty:
+        print("Tidak ada rekomendasi yang tersedia.")
+    else:
+        print("Rekomendasi film serupa berdasarkan tag:")
+        for idx, row in recommendations.iterrows():
+            print(f"- {row['title']} (movieId: {row['movieId']})")
 
+```
+
+![Hasil CBF](img/cbf_hasil.jpg)
+
+
+Fungsi tersebut menghasilkan 5 rekomendasi terbaik berdasarkan tag yang diberikan
+
+
+### Collaborative Filterring
+
+#### Mendefinisikan Model Neural Network Embedding
+
+```
+class RecommenderNet(tf.keras.Model):
+  def __init__(self, num_users, num_movies, embedding_size, **kwargs):
+    super(RecommenderNet, self).__init__(**kwargs)
+    self.user_embedding = layers.Embedding(
+        num_users,
+        embedding_size,
+        embeddings_initializer='he_normal',
+        embeddings_regularizer=keras.regularizers.l2(1e-6)
+    )
+    self.user_bias = layers.Embedding(num_users, 1)
+    self.movies_embedding = layers.Embedding(
+        num_movies,
+        embedding_size,
+        embeddings_initializer='he_normal',
+        embeddings_regularizer=keras.regularizers.l2(1e-6)
+    )
+    self.movies_bias = layers.Embedding(num_movies, 1)
+
+  def call(self, inputs):
+    user_vector = self.user_embedding(inputs[:, 0])
+    user_bias = self.user_bias(inputs[:, 0])
+    movies_vector = self.movies_embedding(inputs[:, 1])
+    movies_bias = self.movies_bias(inputs[:, 1])
+    dot_user_movies = tf.tensordot(user_vector, movies_vector, 2)
+    x = dot_user_movies + user_bias + movies_bias
+    return tf.nn.sigmoid(x)
+```
+Model ini menggunakan embedding untuk merepresentasikan user dan film ke dalam ruang fitur berdimensi rendah. Prediksi rating dilakukan dengan mengalikan embedding user dan film, ditambah bias masing-masing, lalu diproses sigmoid agar output dalam rentang [0,1].
+
+#### Mapping User dan Movie
+
+```
+user_ids = df_rating['userId'].unique().tolist()
+user_to_index = {user_id: index for index, user_id in enumerate(user_ids)}
+index_to_user = {index: user_id for index, user_id in enumerate(user_ids)}
+
+movie_ids = df_rating['movieId'].unique().tolist()
+movie_to_index = {movie_id: index for index, movie_id in enumerate(movie_ids)}
+index_to_movie = {index: movie_id for index, movie_id in enumerate(movie_ids)}
+
+x_train[:, 0] = [user_to_index[user_id] for user_id in x_train[:, 0]]
+x_val[:, 0] = [user_to_index[user_id] for user_id in x_val[:, 0]]
+
+x_train[:, 1] = [movie_to_index[movie_id] for movie_id in x_train[:, 1]]
+x_val[:, 1] = [movie_to_index[movie_id] for movie_id in x_val[:, 1]]
+
+```
+
+Karena embedding memerlukan indeks numerik, maka userId dan movieId asli diubah menjadi indeks untuk input model.
+
+#### Compile dan Training Model
+
+```
+model = RecommenderNet(num_users, num_movies, 50)
+
+model.compile(
+    loss=tf.keras.losses.BinaryCrossentropy(),
+    optimizer=keras.optimizers.Adam(learning_rate=0.001),
+    metrics=[tf.keras.metrics.RootMeanSquaredError()]
+)
+
+earlystopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+checkpoint = ModelCheckpoint('best_model.h5', save_best_only=True)
+
+history = model.fit(
+    x=x_train,
+    y=y_train,
+    batch_size=8,
+    epochs=100,
+    callbacks=[earlystopping, checkpoint],
+    validation_data=(x_val, y_val)
+)
+```
+
+Model dilatih menggunakan loss binary crossentropy dengan optimizer Adam. RMSE digunakan sebagai metrik evaluasi. Early stopping mencegah overfitting dengan menghentikan training saat validasi tidak membaik.
+
+#### Visualisasi
+
+![Hasil Metrik](img/cb_vis.jpg)
+
+Visualisasi ini memperlihatkan bahwa model collaborative filtering yang dikembangkan berhasil belajar dengan baik pada data training dan tetap mempertahankan performa yang konsisten pada data testing. Dengan demikian, model ini dapat diandalkan untuk memprediksi rating film pada pengguna baru secara efektif.

@@ -337,93 +337,91 @@ full_data.head()
 """# Modelling
 
 ## Content-Based Filtering
-
-### Encode Genre
 """
 
-mlb = MultiLabelBinarizer()
-genres_encoded = mlb.fit_transform(full_data['genres'])
+def clean_and_join_tags(tag_lists):
+    """
+    Menerima Series yang berisi list tag per film dari beberapa user,
+    menggabungkan tag menjadi string, dan melewati tag 'no_tag'.
+    """
+    cleaned_tags = []
+    for tags in tag_lists:
+        # Pastikan tags adalah list, jika tidak buat list kosong
+        if isinstance(tags, list):
+            # Filter hapus 'no_tag'
+            filtered = [tag.strip() for tag in tags if tag.strip().lower() != 'no_tag']
+            cleaned_tags.extend(filtered)
+    # Gabungkan menjadi satu string
+    if len(cleaned_tags) == 0:
+        return ''  # jika tidak ada tag selain no_tag
+    return ' '.join(cleaned_tags)
 
-genres_df = pd.DataFrame(genres_encoded, columns=mlb.classes_, index=full_data.index)
+# Cara pakai pada dataframe full_data:
+tags_per_movie = full_data.groupby('movieId')['tag'].apply(clean_and_join_tags).reset_index()
 
-df_final_genre = pd.concat([full_data, genres_df], axis=1)
+print(tags_per_movie.head())
 
-df_final_genre = df_final_genre.drop(['genres'], axis=1)
+"""### TF-IDF"""
 
-print("Contoh data setelah encoding genre:")
-print(df_final_genre.head())
+tfidf_vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
+tfidf_matrix = tfidf_vectorizer.fit_transform(tags_per_movie['tag'])
+
+print(f"Shape TF-IDF matrix: {tfidf_matrix.shape}")
 
 """### Cosine Similarity"""
 
-# Ambil kolom genre yang sudah di-encode
-genre_features = df_final_genre[mlb.classes_]
-
-# Reduksi dimensi genre dengan TruncatedSVD
-svd = TruncatedSVD(n_components=10)
-genre_reduced = svd.fit_transform(genre_features)
-
-print(f"Shape setelah reduksi: {genre_reduced.shape}")
-
-# Inisialisasi Annoy index dengan dimensi fitur hasil reduksi
-f = genre_reduced.shape[1]
-annoy_index = AnnoyIndex(f, metric='angular')  # angular distance ~ cosine similarity
-
-# Masukkan data film ke dalam Annoy index
-for i in range(len(genre_reduced)):
-    annoy_index.add_item(i, genre_reduced[i])
-
-# Bangun index dengan jumlah pohon (tree) tertentu, misal 10
-annoy_index.build(10)
-print("Annoy index sudah dibuat.")
+cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+print(f"Shape cosine similarity matrix: {cosine_sim.shape}")
 
 """### Inferensi"""
 
-def get_annoy_recommendations(movie_id, top_n=5):
-    # Cari indeks film di dataframe berdasarkan movieId
-    idx = df_final_genre[df_final_genre['movieId'] == movie_id].index[0]
+def get_recommendations_by_tag(movie_id, top_n=5):
+    # Cari indeks film
+    idx = tags_per_movie[tags_per_movie['movieId'] == movie_id].index[0]
 
-    # Ambil tetangga terdekat lebih banyak (top_n + buffer)
-    neighbors = annoy_index.get_nns_by_item(idx, top_n + 20)
+    # Hitung similarity film lain
+    sim_scores = list(enumerate(cosine_sim[idx]))
 
-    # Hapus film itu sendiri dari hasil
-    neighbors = [i for i in neighbors if i != idx]
+    # Urutkan berdasarkan similarity tertinggi
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
 
-    # Ambil hanya top_n hasil setelah hapus diri sendiri
-    neighbors = neighbors[:top_n]
+    # Ambil top-n film paling mirip, kecuali film itu sendiri
+    sim_scores = sim_scores[1:top_n+1]
 
-    # Ambil data film rekomendasi berdasarkan indeks
-    recommended_movies = df_final_genre.iloc[neighbors][['movieId', 'title']].drop_duplicates()
+    # Ambil indeks film rekomendasi
+    movie_indices = [i[0] for i in sim_scores]
+
+    # Ambil movieId dan judul film dari dataframe movies (yang sudah kamu siapkan)
+    recommended_ids = tags_per_movie.iloc[movie_indices]['movieId'].values
+    recommended_movies = movies[movies['movieId'].isin(recommended_ids)][['movieId', 'title']].drop_duplicates()
 
     return recommended_movies
 
 
-def recommend_by_title_annoy():
+def recommend_by_title_tag():
     movie_name = input("Masukkan judul film: ").strip().lower()
 
-    # Cari film yang judulnya mirip (case-insensitive)
-    matched = df_final_genre[df_final_genre['title'].str.lower() == movie_name]
+    # Cari movieId berdasarkan judul (case insensitive)
+    matched = movies[movies['title'].str.lower() == movie_name]
 
     if matched.empty:
-        print(f"Film '{movie_name}' tidak ditemukan. Coba lagi.")
+        print(f"Film dengan judul '{movie_name}' tidak ditemukan. Coba lagi.")
         return
 
     movie_id = matched.iloc[0]['movieId']
     print(f"Film yang dipilih: {matched.iloc[0]['title']}")
 
-    recs = get_annoy_recommendations(movie_id, top_n=5)
+    recommendations = get_recommendations_by_tag(movie_id)
 
-    print("Rekomendasi film serupa:")
-    for idx, row in recs.iterrows():
-        print(f"- {row['title']} (movieId: {row['movieId']})")
-
-# Contoh penggunaan
-movie_id = 1  # Toy Story
-recommendations = get_annoy_recommendations(movie_id)
-print(f"Rekomendasi untuk movieId={movie_id}:")
-print(recommendations)
+    if recommendations.empty:
+        print("Tidak ada rekomendasi yang tersedia.")
+    else:
+        print("Rekomendasi film serupa berdasarkan tag:")
+        for idx, row in recommendations.iterrows():
+            print(f"- {row['title']} (movieId: {row['movieId']})")
 
 # Jalankan fungsi input rekomendasi
-recommend_by_title_annoy()
+recommend_by_title_tag()
 
 """## Collaborative Filterring
 
@@ -499,7 +497,7 @@ class RecommenderNet(tf.keras.Model):
 
     return tf.nn.sigmoid(x) # activation sigmoid
 
-# Create mappings for userId and movieId
+# Mapping userId dan movieId ke indeks embedding
 user_ids = df_rating['userId'].unique().tolist()
 user_to_index = {user_id: index for index, user_id in enumerate(user_ids)}
 index_to_user = {index: user_id for index, user_id in enumerate(user_ids)}
@@ -508,7 +506,7 @@ movie_ids = df_rating['movieId'].unique().tolist()
 movie_to_index = {movie_id: index for index, movie_id in enumerate(movie_ids)}
 index_to_movie = {index: movie_id for index, movie_id in enumerate(movie_ids)}
 
-# Apply the mappings to the training and validation data
+# Terapkan mapping ke data training dan validasi
 x_train[:, 0] = [user_to_index[user_id] for user_id in x_train[:, 0]]
 x_val[:, 0] = [user_to_index[user_id] for user_id in x_val[:, 0]]
 
@@ -518,6 +516,8 @@ x_val[:, 1] = [movie_to_index[movie_id] for movie_id in x_val[:, 1]]
 # The number of unique users and movies should be based on the number of unique entries in the original data
 num_users = len(user_ids)
 num_movies = len(movie_ids)
+
+"""Data userId dan movieId diubah menjadi indeks numerik agar dapat digunakan sebagai input embedding pada model neural network."""
 
 model = RecommenderNet(num_users, num_movies, 50) # inisialisasi model
 
@@ -544,7 +544,10 @@ history = model.fit(
     validation_data = (x_val, y_val)
 )
 
-"""### Visualisasi Metrik"""
+"""Model dilatih dengan optimasi binary crossentropy dan menggunakan root mean squared error (RMSE) sebagai metrik evaluasi. Early stopping dan checkpoint digunakan untuk mencegah overfitting dan menyimpan model terbaik.
+
+### Visualisasi Metrik
+"""
 
 plt.plot(history.history['root_mean_squared_error'])
 plt.plot(history.history['val_root_mean_squared_error'])
@@ -554,7 +557,10 @@ plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
 plt.show()
 
-"""### Inferensi"""
+"""Grafik ini menunjukkan perkembangan performa model selama training. RMSE yang menurun menandakan model semakin baik dalam memprediksi rating.
+
+### Inferensi
+"""
 
 def get_collaborative_recommendations(user_id, top_n=5):
     # Cek apakah user_id ada di mapping
