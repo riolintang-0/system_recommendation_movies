@@ -555,5 +555,6 @@ Pada proses evaluasi data testing, RMSE dihitung untuk mengukur performa model p
 
 Nilai RMSE sebesar **0.2459** menunjukkan bahwa rata-rata kesalahan prediksi pada data training adalah 0.2459.
 
+### Kesimpulan
 Perbedaan RMSE antara data training **(0.2459**)** dan data testing **(0.2298)** menunjukkan bahwa model memiliki sedikit overfitting, karena RMSE pada data testing lebih kecil daripada pada data training. Ini bisa berarti model telah terlatih dengan sangat baik pada data training, tetapi sedikit lebih kesulitan dalam menggeneralisasi pada data baru.
 
