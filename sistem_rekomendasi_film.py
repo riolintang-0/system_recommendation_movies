@@ -334,9 +334,9 @@ full_data = pd.merge(ratings_tags, movies, on='movieId', how='left')
 
 full_data.head()
 
-"""# Modelling
+"""## Data Preparation untuk Content-Based Filtering (CBF)
 
-## Content-Based Filtering
+### Menggabungkan Tags ke dalam satu string
 """
 
 def clean_and_join_tags(tag_lists):
@@ -361,19 +361,112 @@ tags_per_movie = full_data.groupby('movieId')['tag'].apply(clean_and_join_tags).
 
 print(tags_per_movie.head())
 
-"""### TF-IDF"""
+"""Pada fungsi diatas menggabungkan `tags` kedalam satu string yang sama jika terdapat lebih dari 1 tag pada `movie` yang sama.
+
+### TF-IDF
+"""
 
 tfidf_vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
 tfidf_matrix = tfidf_vectorizer.fit_transform(tags_per_movie['tag'])
 
 print(f"Shape TF-IDF matrix: {tfidf_matrix.shape}")
 
-"""### Cosine Similarity"""
+"""TF-IDF digunakan untuk mengubah data `tag` menjadi matriks vektor yang dapat digunakan dalam pemodelan CBF. Matriks vektor ini akan digunakan sebagai fitur atribut film dalam CBF. dengan menambahkan parameter `stop_words='english'` dan `max_features=1000` untuk menghilangkan kata-kata yang tidak memiliki makna dan mengambil 1000 fitur tertinggi.
+
+## Data Preparation untuk Collaboration Filtering (CF)
+"""
+
+df_rating = ratings
+
+df_rating.head()
+
+df_rating.info()
+
+"""#### Mengacak Data"""
+
+# Mengacak dataset
+df_rating = df_rating.sample(frac=1, random_state=42)
+df_rating
+
+"""#### Split Data"""
+
+min_rating = df_rating['rating'].min()
+max_rating = df_rating['rating'].max()
+
+# Membuat variabel x untuk mencocokkan data user dan movie menjadi satu value
+x = df_rating[['userId', 'movieId']].values
+
+# Membuat variabel y untuk membuat rating dari hasil
+y = df_rating['rating'].apply(lambda x: (x - min_rating) / (max_rating - min_rating)).values
+
+# Membagi menjadi 80% data train dan 20% data validasi
+train_indices = int(0.8 * df_rating.shape[0])
+x_train, x_val, y_train, y_val = (
+    x[:train_indices],
+    x[train_indices:],
+    y[:train_indices],
+    y[train_indices:]
+)
+
+print(x, y)
+
+"""#### Mapping Data"""
+
+# Mapping userId dan movieId ke indeks embedding
+user_ids = df_rating['userId'].unique().tolist()
+user_to_index = {user_id: index for index, user_id in enumerate(user_ids)}
+index_to_user = {index: user_id for index, user_id in enumerate(user_ids)}
+
+movie_ids = df_rating['movieId'].unique().tolist()
+movie_to_index = {movie_id: index for index, movie_id in enumerate(movie_ids)}
+index_to_movie = {index: movie_id for index, movie_id in enumerate(movie_ids)}
+
+# Terapkan mapping ke data training dan validasi
+x_train[:, 0] = [user_to_index[user_id] for user_id in x_train[:, 0]]
+x_val[:, 0] = [user_to_index[user_id] for user_id in x_val[:, 0]]
+
+x_train[:, 1] = [movie_to_index[movie_id] for movie_id in x_train[:, 1]]
+x_val[:, 1] = [movie_to_index[movie_id] for movie_id in x_val[:, 1]]
+
+# The number of unique users and movies should be based on the number of unique entries in the original data
+num_users = len(user_ids)
+num_movies = len(movie_ids)
+
+"""# Modelling
+
+## Content-Based Filtering
+
+### Cosine Similarity
+"""
 
 cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 print(f"Shape cosine similarity matrix: {cosine_sim.shape}")
 
-"""### Inferensi"""
+"""Menghitung Cosine Similarity antara setiap baris (movie) dalam matrix TF-IDF. Cosine Similarity digunakan untuk mengukur kemiripan antara dua vektor. Dalam konteks ini, kita ingin menemukan movie yang mirip dengan movie lainnya berdasarkan *tags* mereka.
+
+Cosine Similarity mengukur kemiripan antara dua vektor berdasarkan sudut (bukan panjangnya).
+
+Nilai berada di antara `-1` hingga `1`:
+
+`1` → sangat mirip (arah vektor sama)
+
+`0` → tidak mirip (tegak lurus)
+
+`-1` → berlawanan (jarang terjadi di NLP)
+
+**Rumus Cosine Similarity**
+
+$$
+\text{cosine_similarity}(A, B) = \frac{A \cdot B}{\|A\| \times \|B\|}
+$$
+
+Keterangan:
+- $ A \cdot B $: dot product antara vektor A dan B  
+- $ \|A\| $: panjang (norma) dari vektor A  
+- $ \|B\| $: panjang (norma) dari vektor B
+
+### Inferensi
+"""
 
 def get_recommendations_by_tag(movie_id, top_n=5):
     # Cari indeks film
@@ -425,42 +518,8 @@ recommend_by_title_tag()
 
 """## Collaborative Filterring
 
-### Data Preparation
+### Proses Training
 """
-
-df_rating = ratings
-
-df_rating.head()
-
-df_rating.info()
-
-"""### Split Data"""
-
-# Mengacak dataset
-df_rating = df_rating.sample(frac=1, random_state=42)
-df_rating
-
-min_rating = df_rating['rating'].min()
-max_rating = df_rating['rating'].max()
-
-# Membuat variabel x untuk mencocokkan data user dan movie menjadi satu value
-x = df_rating[['userId', 'movieId']].values
-
-# Membuat variabel y untuk membuat rating dari hasil
-y = df_rating['rating'].apply(lambda x: (x - min_rating) / (max_rating - min_rating)).values
-
-# Membagi menjadi 80% data train dan 20% data validasi
-train_indices = int(0.8 * df_rating.shape[0])
-x_train, x_val, y_train, y_val = (
-    x[:train_indices],
-    x[train_indices:],
-    y[:train_indices],
-    y[train_indices:]
-)
-
-print(x, y)
-
-"""### Proses Training"""
 
 class RecommenderNet(tf.keras.Model):
 
@@ -496,26 +555,6 @@ class RecommenderNet(tf.keras.Model):
     x = dot_user_movies + user_bias + movies_bias
 
     return tf.nn.sigmoid(x) # activation sigmoid
-
-# Mapping userId dan movieId ke indeks embedding
-user_ids = df_rating['userId'].unique().tolist()
-user_to_index = {user_id: index for index, user_id in enumerate(user_ids)}
-index_to_user = {index: user_id for index, user_id in enumerate(user_ids)}
-
-movie_ids = df_rating['movieId'].unique().tolist()
-movie_to_index = {movie_id: index for index, movie_id in enumerate(movie_ids)}
-index_to_movie = {index: movie_id for index, movie_id in enumerate(movie_ids)}
-
-# Terapkan mapping ke data training dan validasi
-x_train[:, 0] = [user_to_index[user_id] for user_id in x_train[:, 0]]
-x_val[:, 0] = [user_to_index[user_id] for user_id in x_val[:, 0]]
-
-x_train[:, 1] = [movie_to_index[movie_id] for movie_id in x_train[:, 1]]
-x_val[:, 1] = [movie_to_index[movie_id] for movie_id in x_val[:, 1]]
-
-# The number of unique users and movies should be based on the number of unique entries in the original data
-num_users = len(user_ids)
-num_movies = len(movie_ids)
 
 """Data userId dan movieId diubah menjadi indeks numerik agar dapat digunakan sebagai input embedding pada model neural network."""
 
@@ -563,51 +602,51 @@ plt.show()
 """
 
 def get_collaborative_recommendations(user_id, top_n=5):
-    # Cek apakah user_id ada di mapping
-    if user_id not in user_to_index:
-        print(f"UserId {user_id} tidak ditemukan.")
-        return None
+      # Cek apakah user_id ada di mapping
+      if user_id not in user_to_index:
+          print(f"UserId {user_id} tidak ditemukan.")
+          return None
 
-    user_idx = user_to_index[user_id]
+      user_idx = user_to_index[user_id]
 
-    # Semua movie index
-    all_movie_indices = list(range(num_movies))
+      # Semua movie index
+      all_movie_indices = list(range(num_movies))
 
-    # Movie yang sudah dirating user
-    rated_movie_ids = df_rating[df_rating['userId'] == user_id]['movieId'].unique()
-    rated_movie_indices = [movie_to_index[movie_id] for movie_id in rated_movie_ids if movie_id in movie_to_index]
+      # Movie yang sudah dirating user
+      rated_movie_ids = df_rating[df_rating['userId'] == user_id]['movieId'].unique()
+      rated_movie_indices = [movie_to_index[movie_id] for movie_id in rated_movie_ids if movie_id in movie_to_index]
 
-    # Movie yang belum dirating user
-    unrated_movie_indices = [i for i in all_movie_indices if i not in rated_movie_indices]
+      # Movie yang belum dirating user
+      unrated_movie_indices = [i for i in all_movie_indices if i not in rated_movie_indices]
 
-    # Prediksi rating untuk film belum dirating user
-    predictions = []
-    batch_size = 1000  # untuk efisiensi, prediksi batch
+      # Prediksi rating untuk film belum dirating user
+      predictions = []
+      batch_size = 1000  # untuk efisiensi, prediksi batch
 
-    for start in range(0, len(unrated_movie_indices), batch_size):
-        end = min(start + batch_size, len(unrated_movie_indices))
-        batch_movie_indices = unrated_movie_indices[start:end]
-        batch_user_indices = [user_idx] * len(batch_movie_indices)
+      for start in range(0, len(unrated_movie_indices), batch_size):
+          end = min(start + batch_size, len(unrated_movie_indices))
+          batch_movie_indices = unrated_movie_indices[start:end]
+          batch_user_indices = [user_idx] * len(batch_movie_indices)
 
-        inputs = np.array([batch_user_indices, batch_movie_indices]).T
-        preds = model.predict(inputs).flatten()
+          inputs = np.array([batch_user_indices, batch_movie_indices]).T
+          preds = model.predict(inputs).flatten()
 
-        for movie_idx, pred_rating in zip(batch_movie_indices, preds):
-            predictions.append((movie_idx, pred_rating))
+          for movie_idx, pred_rating in zip(batch_movie_indices, preds):
+              predictions.append((movie_idx, pred_rating))
 
-    # Urutkan berdasarkan prediksi rating tertinggi
-    predictions.sort(key=lambda x: x[1], reverse=True)
+      # Urutkan berdasarkan prediksi rating tertinggi
+      predictions.sort(key=lambda x: x[1], reverse=True)
 
-    # Ambil top_n rekomendasi
-    top_predictions = predictions[:top_n]
+      # Ambil top_n rekomendasi
+      top_predictions = predictions[:top_n]
 
-    # Ambil movieId dari index
-    recommended_movie_ids = [index_to_movie[movie_idx] for movie_idx, _ in top_predictions]
+      # Ambil movieId dari index
+      recommended_movie_ids = [index_to_movie[movie_idx] for movie_idx, _ in top_predictions]
 
-    # Ambil judul film dari dataframe movies
-    recommended_movies = movies[movies['movieId'].isin(recommended_movie_ids)][['movieId', 'title', 'year']].drop_duplicates()
+      # Ambil judul film dari dataframe movies
+      recommended_movies = movies[movies['movieId'].isin(recommended_movie_ids)][['movieId', 'title', 'year']].drop_duplicates()
 
-    return recommended_movies
+      return recommended_movies
 
 def recommend_collaborative():
     user_id_input = input("Masukkan userId untuk mendapatkan rekomendasi: ").strip()
