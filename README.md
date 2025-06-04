@@ -279,7 +279,8 @@ Hasil diatas menggabungkan 3 df yaitu `ratings_tags` dan `movies` dengan kunci `
 
 #### 1. Persiapan Data Tags
 
-#### Pengabungan Tag menjadi Satu String
+
+##### Pengabungan Tag menjadi Satu String
 
 ```
 def clean_and_join_tags(tag_lists):
@@ -304,13 +305,44 @@ tags_per_movie = full_data.groupby('movieId')['tag'].apply(clean_and_join_tags).
 
 `tags_per_movie` digunakan untuk menggabungkan seluruh `tag` pada `movie` yang sama kedalam satu string, lalu memberikan nilai default **no_tag** pada data `tag` yang kosong. 
 
-#### 2. TF-IDF
+##### TF-IDF
 
 ```
 tfidf_vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
 tfidf_matrix = tfidf_vectorizer.fit_transform(tags_per_movie['tag'])
 ```
 TF-IDF digunakan untuk mengubah data `tag` menjadi matriks vektor yang dapat digunakan dalam pemodelan CBF. Matriks vektor ini akan digunakan sebagai fitur atribut film dalam CBF. dengan menambahkan parameter `stop_words='english'` dan `max_features=1000` untuk menghilangkan kata-kata yang tidak memiliki makna dan mengambil 1000 fitur tertinggi.
+
+#### 2. Encoding Genre
+
+```
+mlb = MultiLabelBinarizer()
+genres_encoded = mlb.fit_transform(full_data['genres'])
+
+# Membuat dataframe hasil encoding genre
+genres_df = pd.DataFrame(genres_encoded, columns=mlb.classes_, index=full_data.index)
+full_data = pd.concat([full_data, genres_df], axis=1)
+full_data.drop(columns=['genres'], inplace=True)
+```
+Menerapkan One Hot Encoding pada kolom `genre` yang akan digabung dalam `tag` untuk Content-Based Filtering
+
+
+#### 3. Menggabungkan Genre dan Tag
+
+```
+genres_df_with_movieId = full_data[['movieId']].reset_index(drop=True).join(genres_df)
+
+genres_aligned_with_tags = pd.merge(tags_per_movie[['movieId']], genres_df_with_movieId.drop_duplicates(subset=['movieId']), on='movieId', how='left')
+
+genres_aligned_values = genres_aligned_with_tags.drop(columns=['movieId']).values
+
+genres_aligned_values = np.nan_to_num(genres_aligned_values)
+
+
+combined_features = np.hstack([genres_aligned_values, tfidf_matrix.toarray()])
+```
+
+Fungsi diatas menggabungkan `genres` dengan `tags_per_movies` yang akan digunakan pada **Cosinus Similarity**
 
 
 ### Data Preparation untuk Collaborative Filtering (CF)
@@ -377,7 +409,8 @@ Mapping userId dan movieId ke indeks numerik diperlukan agar bisa digunakan dala
 #### Cosines Similarity
 
 ```
-cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+# Hitung cosine similarity berdasarkan fitur gabungan
+cosine_sim_combined = cosine_similarity(combined_features, combined_features)
 ```
 
 Menghitung Cosine Similarity antara setiap baris (movie) dalam matrix TF-IDF. Cosine Similarity digunakan untuk mengukur kemiripan antara dua vektor. Dalam konteks ini, kita ingin menemukan movie yang mirip dengan movie lainnya berdasarkan *tags* mereka.
@@ -409,7 +442,7 @@ Keterangan:
 ![Hasil CBF](img/cbf_hasil.jpg)
 
 
-Fungsi tersebut menghasilkan 5 rekomendasi terbaik berdasarkan tag yang diberikan
+Fungsi tersebut menghasilkan 5 rekomendasi terbaik berdasarkan kombinasi `tag` dan `genre` 
 
 
 ### Collaborative Filterring
@@ -503,55 +536,30 @@ Visualisasi ini memperlihatkan bahwa model collaborative filtering yang dikemban
 
 ![CB Inferensi](img/cb_inferensi.jpg)
 
-Berdasarkan hasil rekomendasi diatas, model sudah bisa memberikan peni
+Berdasarkan hasil rekomendasi diatas, model sudah bisa memberikan rekomendasi berdasarkan movie yang diberikan rating oleh user.
 
 ## Evaluasi
 
 ### Content-Based Filtering
 
-![Evaluasi CBF](img/eval_cbf.jpg)
+![Evaluasi CBF](img/cbf_hasil.jpg)
 
-Pada pendekatan **Content-Based Filtering (CBF)** yang menggunakan **tag** sebagai acuan untuk rekomendasi, evaluasi dilakukan dengan beberapa metrik utama yaitu **Precision@K**, **Recall@K**, dan **F1-Score@K**. Evaluasi ini bertujuan untuk mengukur kualitas rekomendasi film yang diberikan oleh sistem.
+Pada pendekatan **Content-Based Filtering (CBF)** yang menggunakan **tag** dan **genre** sebagai acuan untuk rekomendasi, evaluasi dilakukan dengan metrik **Precision@K**. Evaluasi ini bertujuan untuk mengukur kualitas rekomendasi film yang diberikan oleh sistem.
 
-#### Precision
-
-**Precision@5** mengukur seberapa banyak rekomendasi yang relevan di antara 5 rekomendasi teratas yang diberikan oleh sistem. Dengan nilai **0.2000**, artinya **20%** dari rekomendasi teratas adalah relevan, sementara sisanya tidak relevan.
-
+**Precision@5** mengukur seberapa banyak rekomendasi yang relevan di antara 5 rekomendasi teratas yang diberikan oleh sistem. 
 ##### Formula Precision@5:
 
 $$
 \text{Precision@5} = \frac{\text{Jumlah rekomendasi relevan}}{5}
 $$
 
+Hasil rekomendasi: 5 Movies
 
-### Recall
+Mengandung Genre Sesuai ( Adventure|Animation|Children|Comedy|Fantasy) : 5 Movies
 
-**Recall@K** mengukur seberapa banyak **rekomendasi relevan** yang berhasil ditemukan oleh model dari seluruh **film relevan yang disukai oleh pengguna**. Dengan kata lain, Recall mengukur kemampuan model dalam **menemukan** film relevan yang seharusnya ditampilkan kepada pengguna.
+Precision = 5/5 = 100%
 
-
-#### Formula:
-
-$$
-\text{Recall@K} = \frac{\text{Jumlah rekomendasi relevan}}{\text{Jumlah film relevan yang disukai pengguna}}
-$$
-
-### F1-Score
-
-**F1-Score** adalah rata-rata harmonis antara **Precision** dan **Recall**. F1-Score memberikan gambaran yang lebih seimbang antara kemampuan model untuk memberikan rekomendasi relevan (Precision) dan kemampuan model untuk menemukan semua rekomendasi relevan yang ada (Recall).
-
-#### Formula:
-
-$$
-\text{F1-SCORE} = 2\frac{\text{Precision x Recall}}{\text{Precision + Recall}}
-$$
-
-### Kesimpulan 
-
-**Precision@5**: 0.2000 menunjukkan bahwa 20% dari rekomendasi teratas yang diberikan oleh model adalah relevan. Artinya, hanya sebagian kecil rekomendasi yang benar-benar sesuai dengan preferensi pengguna.
-
-**Recall@5**: 0.0043 mengindikasikan bahwa model hanya berhasil menemukan 0.43% dari seluruh film relevan yang disukai pengguna. Nilai ini menunjukkan bahwa model memiliki performa yang buruk dalam menemukan film relevan. Sebagian besar film relevan yang disukai oleh pengguna tidak masuk dalam rekomendasi.
-
-**F1-Score@5**: 0.2000 menggambarkan bahwa model memiliki performa yang buruk dalam menyeimbangkan Precision dan Recall. Model mampu memberikan beberapa rekomendasi yang relevan (Precision), tetapi gagal untuk menemukan banyak film relevan (Recall).
+Maka dinyatakan model dapat memberikan Rekomendasi sesuai dengan Genrenya.
 
 ### Collaborative Filtering
 

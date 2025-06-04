@@ -387,8 +387,33 @@ print(f"Shape TF-IDF matrix: {tfidf_matrix.shape}")
 
 """TF-IDF digunakan untuk mengubah data `tag` menjadi matriks vektor yang dapat digunakan dalam pemodelan CBF. Matriks vektor ini akan digunakan sebagai fitur atribut film dalam CBF. dengan menambahkan parameter `stop_words='english'` dan `max_features=1000` untuk menghilangkan kata-kata yang tidak memiliki makna dan mengambil 1000 fitur tertinggi.
 
-## Data Preparation untuk Collaboration Filtering (CF)
+### Menggabungkan Genre dan Tag
 """
+
+# Gabungkan genre dan tag (TF-IDF)
+
+# Align genres_df with tags_per_movie by merging on movieId
+# First, ensure genres_df has movieId for merging
+# Since genres_df was created from full_data, we need the movieId from full_data
+genres_df_with_movieId = full_data[['movieId']].reset_index(drop=True).join(genres_df)
+
+# Now merge with tags_per_movie to get genres for unique movies
+# Use left merge to keep all movies from tags_per_movie
+genres_aligned_with_tags = pd.merge(tags_per_movie[['movieId']], genres_df_with_movieId.drop_duplicates(subset=['movieId']), on='movieId', how='left')
+
+# Drop the movieId column from genres_aligned_with_tags to get just the genre values
+genres_aligned_values = genres_aligned_with_tags.drop(columns=['movieId']).values
+
+# Now concatenate the aligned genre features with the TF-IDF matrix
+# Handle potential NaN values in genres after the merge if a movie in tags_per_movie had no genre
+genres_aligned_values = np.nan_to_num(genres_aligned_values)
+
+
+combined_features = np.hstack([genres_aligned_values, tfidf_matrix.toarray()])
+
+print(f"Shape combined features: {combined_features.shape}")
+
+"""## Data Preparation untuk Collaboration Filtering (CF)"""
 
 df_rating = ratings
 
@@ -452,38 +477,15 @@ num_movies = len(movie_ids)
 
 ## Content-Based Filtering
 
-### Menggabungkan Genre dan Tag
+### Cosine Similarity (Tag and Genre)
 """
 
-# Gabungkan genre dan tag (TF-IDF)
+# Hitung cosine similarity berdasarkan fitur gabungan
+cosine_sim_combined = cosine_similarity(combined_features, combined_features)
 
-# Align genres_df with tags_per_movie by merging on movieId
-# First, ensure genres_df has movieId for merging
-# Since genres_df was created from full_data, we need the movieId from full_data
-genres_df_with_movieId = full_data[['movieId']].reset_index(drop=True).join(genres_df)
+"""Cosine Similarity digunakan untuk mengukur seberapa mirip dua film berdasarkan sudut antara vektor fitur mereka. Nilai cosine similarity berkisar antara 0 (tidak mirip) dan 1 (sangat mirip).
 
-# Now merge with tags_per_movie to get genres for unique movies
-# Use left merge to keep all movies from tags_per_movie
-genres_aligned_with_tags = pd.merge(tags_per_movie[['movieId']], genres_df_with_movieId.drop_duplicates(subset=['movieId']), on='movieId', how='left')
-
-# Drop the movieId column from genres_aligned_with_tags to get just the genre values
-genres_aligned_values = genres_aligned_with_tags.drop(columns=['movieId']).values
-
-# Now concatenate the aligned genre features with the TF-IDF matrix
-# Handle potential NaN values in genres after the merge if a movie in tags_per_movie had no genre
-genres_aligned_values = np.nan_to_num(genres_aligned_values)
-
-
-combined_features = np.hstack([genres_aligned_values, tfidf_matrix.toarray()])
-
-print(f"Shape combined features: {combined_features.shape}")
-
-"""### Cosine Similarity"""
-
-cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
-print(f"Shape cosine similarity matrix: {cosine_sim.shape}")
-
-"""Menghitung Cosine Similarity antara setiap baris (movie) dalam matrix TF-IDF. Cosine Similarity digunakan untuk mengukur kemiripan antara dua vektor. Dalam konteks ini, kita ingin menemukan movie yang mirip dengan movie lainnya berdasarkan *tags* mereka.
+Menghitung Cosine Similarity antara setiap baris (movie) dalam matrix TF-IDF. Cosine Similarity digunakan untuk mengukur kemiripan antara dua vektor. Dalam konteks ini, kita ingin menemukan movie yang mirip dengan movie lainnya berdasarkan *tags* mereka.
 
 Cosine Similarity mengukur kemiripan antara dua vektor berdasarkan sudut (bukan panjangnya).
 
@@ -506,66 +508,8 @@ Keterangan:
 - $ \|A\| $: panjang (norma) dari vektor A  
 - $ \|B\| $: panjang (norma) dari vektor B
 
-### Cosine Similarity (Tag and Genre)
+### Inferensi (Tag dan Genre)
 """
-
-# Hitung cosine similarity berdasarkan fitur gabungan
-cosine_sim_combined = cosine_similarity(combined_features, combined_features)
-
-"""Cosine Similarity digunakan untuk mengukur seberapa mirip dua film berdasarkan sudut antara vektor fitur mereka. Nilai cosine similarity berkisar antara 0 (tidak mirip) dan 1 (sangat mirip).
-
-### Inferensi
-"""
-
-def get_recommendations_by_tag(movie_id, top_n=5):
-    # Cari indeks film
-    idx = tags_per_movie[tags_per_movie['movieId'] == movie_id].index[0]
-
-    # Hitung similarity film lain
-    sim_scores = list(enumerate(cosine_sim[idx]))
-
-    # Urutkan berdasarkan similarity tertinggi
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-
-    # Ambil top-n film paling mirip, kecuali film itu sendiri
-    sim_scores = sim_scores[1:top_n+1]
-
-    # Ambil indeks film rekomendasi
-    movie_indices = [i[0] for i in sim_scores]
-
-    # Ambil movieId dan judul film dari dataframe movies (yang sudah kamu siapkan)
-    recommended_ids = tags_per_movie.iloc[movie_indices]['movieId'].values
-    recommended_movies = movies[movies['movieId'].isin(recommended_ids)][['movieId', 'title']].drop_duplicates()
-
-    return recommended_movies
-
-
-def recommend_by_title_tag():
-    movie_name = input("Masukkan judul film: ").strip().lower()
-
-    # Cari movieId berdasarkan judul (case insensitive)
-    matched = movies[movies['title'].str.lower() == movie_name]
-
-    if matched.empty:
-        print(f"Film dengan judul '{movie_name}' tidak ditemukan. Coba lagi.")
-        return
-
-    movie_id = matched.iloc[0]['movieId']
-    print(f"Film yang dipilih: {matched.iloc[0]['title']}")
-
-    recommendations = get_recommendations_by_tag(movie_id)
-
-    if recommendations.empty:
-        print("Tidak ada rekomendasi yang tersedia.")
-    else:
-        print("Rekomendasi film serupa berdasarkan tag:")
-        for idx, row in recommendations.iterrows():
-            print(f"- {row['title']} (movieId: {row['movieId']})")
-
-# Jalankan fungsi input rekomendasi
-recommend_by_title_tag()
-
-"""### Inferensi (Tag dan Genre)"""
 
 from os.path import join
 def get_recommendations_by_genre_and_tag(movie_id, top_n=5):
