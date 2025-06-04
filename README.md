@@ -241,6 +241,14 @@ Hasil :
 
 Hasil diatas pada kolom `tags` memuat kumpulan `tag` yang diberikan `users` pada `movies` yang sama dalam bentuk list String.
 
+#### 2. Memberikan nilai missing value pada kolom Tag
+
+```
+tags_agg['tag'] = tags_agg['tag'].fillna('no_tag')
+```
+Hasil :
+![Tags Fill Missing](img/tags_fill.jpg)
+
 ---
 
 ### Menggabungkan *ratings* dengan *tags*
