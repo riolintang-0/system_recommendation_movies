@@ -87,6 +87,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.decomposition import TruncatedSVD
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, mean_squared_error
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -560,7 +561,7 @@ class RecommenderNet(tf.keras.Model):
 
 model = RecommenderNet(num_users, num_movies, 50) # inisialisasi model
 
-earlystopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True) # inisialisasi earlystopping
+earlystopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True) # inisialisasi earlystopping
 
 checkpoint = ModelCheckpoint('best_model.h5', save_best_only=True) # inisialisasi checkpoint
 
@@ -676,3 +677,134 @@ df_rating.head()
 
 # Jalankan fungsi input interaktif
 recommend_collaborative()
+
+"""## Evaluasi
+
+### Content-Based Filtering
+
+#### Precision
+
+**Precision@5** mengukur seberapa banyak rekomendasi yang relevan di antara 5 rekomendasi teratas yang diberikan oleh sistem. Dengan nilai **0.2000**, artinya **20%** dari rekomendasi teratas adalah relevan, sementara sisanya tidak relevan.
+
+
+Formula Precision@5:
+
+$$
+\text{Precision@5} = \frac{\text{Jumlah rekomendasi relevan}}{5}
+$$
+"""
+
+# Fungsi untuk menghitung Precision@K
+def evaluate_precision_at_k(user_id, movie_id, top_n=5):
+    recommended_movies = get_recommendations_by_tag(movie_id, top_n)
+
+    # Ambil film yang disukai oleh pengguna (relevan)
+    liked_movies = full_data[full_data['userId'] == user_id]['movieId'].tolist()
+
+    # Hitung berapa banyak rekomendasi yang relevan
+    relevant_movies = [movie for movie in recommended_movies['movieId'] if movie in liked_movies]
+
+    precision_at_k = len(relevant_movies) / top_n
+    print(f"Precision@{top_n}: {precision_at_k:.4f}")
+    return precision_at_k
+
+"""#### Recall
+
+**Recall@K** mengukur seberapa banyak **rekomendasi relevan** yang berhasil ditemukan oleh model dari seluruh **film relevan yang disukai oleh pengguna**. Dengan kata lain, Recall mengukur kemampuan model dalam **menemukan** film relevan yang seharusnya ditampilkan kepada pengguna.
+
+$$
+\text{Recall@K} = \frac{\text{Jumlah rekomendasi relevan}}{\text{Jumlah film relevan yang disukai pengguna}}
+$$
+"""
+
+# Fungsi untuk menghitung Recall@K
+def evaluate_recall_at_k(user_id, movie_id, top_n=5):
+    recommended_movies = get_recommendations_by_tag(movie_id, top_n)
+
+    # Ambil film yang disukai oleh pengguna (relevan)
+    liked_movies = full_data[full_data['userId'] == user_id]['movieId'].tolist()
+
+    # Hitung berapa banyak rekomendasi relevan yang ditemukan
+    relevant_movies = [movie for movie in recommended_movies['movieId'] if movie in liked_movies]
+
+    recall_at_k = len(relevant_movies) / len(liked_movies)
+    print(f"Recall@{top_n}: {recall_at_k:.4f}")
+    return recall_at_k
+
+"""#### F1-Score
+
+**F1-Score** adalah rata-rata harmonis antara **Precision** dan **Recall**. F1-Score memberikan gambaran yang lebih seimbang antara kemampuan model untuk memberikan rekomendasi relevan (Precision) dan kemampuan model untuk menemukan semua rekomendasi relevan yang ada (Recall).
+
+Formula:
+$$
+\text{F1-SCORE} = 2\frac{\text{Precision x Recall}}{\text{Precision + Recall}}
+$$
+"""
+
+def evaluate_f1_score(user_id, movie_id, top_n=5):
+    recommended_movies = get_recommendations_by_tag(movie_id, top_n)
+
+    # Ambil film yang disukai oleh pengguna (relevan)
+    liked_movies = full_data[full_data['userId'] == user_id]['movieId'].tolist()
+
+    # Tentukan relevansi rekomendasi (1 = relevan, 0 = tidak relevan)
+    relevant_movies = [1 if movie in liked_movies else 0 for movie in recommended_movies['movieId']]
+
+    # Sesuaikan panjang antara relevant_movies dan true_labels (film relevan yang disukai)
+    true_labels = [1] * len(relevant_movies)  # Semua film yang relevan adalah label 1
+
+    # Pastikan panjangnya sama dengan rekomendasi yang ada
+    true_labels = true_labels[:len(relevant_movies)]
+
+    f1 = f1_score(true_labels, relevant_movies, average='micro')
+    print(f"F1-Score@{top_n}: {f1:.4f}")
+    return f1
+
+"""#### Hasil"""
+
+full_data.head()
+
+user_id_test = 1
+movie_id_test = 47
+
+# Evaluasi Precision@5
+evaluate_precision_at_k(user_id_test, movie_id_test, top_n=5)
+
+# Evaluasi Recall@5
+evaluate_recall_at_k(user_id_test, movie_id_test, top_n=5)
+
+# Evaluasi F1-Score@5
+evaluate_f1_score(user_id_test, movie_id_test, top_n=5)
+
+"""Hasil evaluasi yang kamu tunjukkan menunjukkan bahwa Precision@5, Recall@5, dan F1-Score@5 memiliki nilai yang relatif rendah, yang mengindikasikan bahwa sistem rekomendasi berbasis Content-Based Filtering (CBF) yang menggunakan tag masih perlu diperbaiki karena tag yang yang diberikan pada user masih sedikit dan banyak movie yang tidak terdapat tag.
+
+### Collaborative Filtering
+
+#### RMSE pada Data Test
+"""
+
+# Fungsi untuk evaluasi Collaborative Filtering dengan RMSE
+def evaluate_cf_model(model, x_test, y_test):
+    # Prediksi rating untuk data testing
+    y_pred = model.predict(x_test)
+
+    # Hitung RMSE
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+    print(f"RMSE pada data testing: {rmse:.4f}")
+    return rmse
+
+# Evaluasi model Collaborative Filtering
+evaluate_cf_model(model, x_val, y_val)
+
+"""#### RMSE pada Data Training"""
+
+# Prediksi pada data training
+train_pred = model.predict(x_train)
+
+# Hitung RMSE untuk data training
+train_rmse = np.sqrt(mean_squared_error(y_train, train_pred))
+
+print(f"RMSE pada data training: {train_rmse:.4f}")
+
+"""Perbedaan RMSE antara data training **(0.2459**)** dan data testing **(0.2298)** menunjukkan bahwa model memiliki sedikit overfitting, karena RMSE pada data testing lebih kecil daripada pada data training. Ini bisa berarti model telah terlatih dengan sangat baik pada data training, tetapi sedikit lebih kesulitan dalam menggeneralisasi pada data baru."""

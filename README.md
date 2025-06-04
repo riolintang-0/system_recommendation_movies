@@ -472,6 +472,7 @@ history = model.fit(
 Model dilatih menggunakan loss binary crossentropy dengan optimizer Adam. RMSE digunakan sebagai metrik evaluasi.
 
 Menggunakanan parameter *callback*
+
 EarlyStopping: Menghentikan pelatihan jika model tidak menunjukkan peningkatan pada data validasi, untuk menghindari overfitting.
 
 ModelCheckpoint: Menyimpan model terbaik selama pelatihan.
@@ -487,4 +488,72 @@ Visualisasi ini memperlihatkan bahwa model collaborative filtering yang dikemban
 
 ![CB Inferensi](img/cb_inferensi.jpg)
 
-Berdasarkan hasil rekomendasi diatas, 
+Berdasarkan hasil rekomendasi diatas, model sudah bisa memberikan peni
+
+## Evaluasi
+
+### Content-Based Filtering
+
+![Evaluasi CBF](img/eval_cbf.jpg)
+
+Pada pendekatan **Content-Based Filtering (CBF)** yang menggunakan **tag** sebagai acuan untuk rekomendasi, evaluasi dilakukan dengan beberapa metrik utama yaitu **Precision@K**, **Recall@K**, dan **F1-Score@K**. Evaluasi ini bertujuan untuk mengukur kualitas rekomendasi film yang diberikan oleh sistem.
+
+#### Precision
+
+**Precision@5** mengukur seberapa banyak rekomendasi yang relevan di antara 5 rekomendasi teratas yang diberikan oleh sistem. Dengan nilai **0.2000**, artinya **20%** dari rekomendasi teratas adalah relevan, sementara sisanya tidak relevan.
+
+##### Formula Precision@5:
+
+$$
+\text{Precision@5} = \frac{\text{Jumlah rekomendasi relevan}}{5}
+$$
+
+
+### Recall
+
+**Recall@K** mengukur seberapa banyak **rekomendasi relevan** yang berhasil ditemukan oleh model dari seluruh **film relevan yang disukai oleh pengguna**. Dengan kata lain, Recall mengukur kemampuan model dalam **menemukan** film relevan yang seharusnya ditampilkan kepada pengguna.
+
+
+#### Formula:
+
+$$
+\text{Recall@K} = \frac{\text{Jumlah rekomendasi relevan}}{\text{Jumlah film relevan yang disukai pengguna}}
+$$
+
+### F1-Score
+
+**F1-Score** adalah rata-rata harmonis antara **Precision** dan **Recall**. F1-Score memberikan gambaran yang lebih seimbang antara kemampuan model untuk memberikan rekomendasi relevan (Precision) dan kemampuan model untuk menemukan semua rekomendasi relevan yang ada (Recall).
+
+#### Formula:
+$$
+\text{F1-SCORE} = 2\frac{\text{Precision x Recall}}{\text{Precision + Recall}}
+$$
+
+### Kesimpulan 
+
+**Precision@5**: 0.2000 menunjukkan bahwa 20% dari rekomendasi teratas yang diberikan oleh model adalah relevan. Artinya, hanya sebagian kecil rekomendasi yang benar-benar sesuai dengan preferensi pengguna.
+
+**Recall@5**: 0.0043 mengindikasikan bahwa model hanya berhasil menemukan 0.43% dari seluruh film relevan yang disukai pengguna. Nilai ini menunjukkan bahwa model memiliki performa yang buruk dalam menemukan film relevan. Sebagian besar film relevan yang disukai oleh pengguna tidak masuk dalam rekomendasi.
+
+**F1-Score@5**: 0.2000 menggambarkan bahwa model memiliki performa yang buruk dalam menyeimbangkan Precision dan Recall. Model mampu memberikan beberapa rekomendasi yang relevan (Precision), tetapi gagal untuk menemukan banyak film relevan (Recall).
+
+### Collaborative Filtering
+
+![RMSE Testing](img/cb_rmse_test.jpg)
+
+#### 1. **RMSE pada Data Testing**
+
+Pada proses evaluasi data testing, RMSE dihitung untuk mengukur performa model pada data yang tidak dilihat selama pelatihan (data baru). 
+
+- Nilai RMSE sebesar **0.2298** menunjukkan bahwa rata-rata kesalahan antara rating yang diprediksi dan rating yang sebenarnya pada data testing adalah sekitar **0.2298**.
+- Nilai ini cukup baik karena semakin kecil nilai RMSE, semakin akurat model dalam memprediksi rating yang sebenarnya.
+
+#### 2. **RMSE pada Data Training**
+
+![RMSE Training](img/cb_rmse_train.jpg)
+
+
+Nilai RMSE sebesar **0.2459** menunjukkan bahwa rata-rata kesalahan prediksi pada data training adalah 0.2459.
+
+Perbedaan RMSE antara data training **(0.2459**)** dan data testing **(0.2298)** menunjukkan bahwa model memiliki sedikit overfitting, karena RMSE pada data testing lebih kecil daripada pada data training. Ini bisa berarti model telah terlatih dengan sangat baik pada data training, tetapi sedikit lebih kesulitan dalam menggeneralisasi pada data baru.
+
