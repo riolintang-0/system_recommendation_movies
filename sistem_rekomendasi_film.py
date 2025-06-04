@@ -255,7 +255,7 @@ print(tags.groupby(['userId','movieId']).size().max())
 
 # Memisahkan genres kedalam daftar list
 
-movies['genres'] = movies['genres'].str.split('|')
+movies['genres_list'] = movies['genres'].str.split('|')
 
 movies.head()
 
@@ -295,7 +295,7 @@ ratings.duplicated().sum()
 
 print(tags.groupby(['userId','movieId']).size().max())
 
-"""### Menggabungkan tag yang diberikan user pada movies yang sama"""
+"""### Menggabungkan tag yang diberikan user pada movies yang sama TES"""
 
 tags_agg = tags.groupby(['userId', 'movieId'])['tag'].apply(lambda x: ','.join(x.unique())).reset_index()
 
@@ -336,6 +336,19 @@ full_data = pd.merge(ratings_tags, movies, on='movieId', how='left')
 full_data.head()
 
 """## Data Preparation untuk Content-Based Filtering (CBF)
+
+### Encoding Genre
+"""
+
+mlb = MultiLabelBinarizer()
+genres_encoded = mlb.fit_transform(full_data['genres'])
+
+# Membuat dataframe hasil encoding genre
+genres_df = pd.DataFrame(genres_encoded, columns=mlb.classes_, index=full_data.index)
+full_data = pd.concat([full_data, genres_df], axis=1)
+full_data.drop(columns=['genres'], inplace=True)
+
+"""Menerapkan One Hot Encoding pada kolom `genre`
 
 ### Menggabungkan Tags ke dalam satu string
 """
@@ -389,7 +402,7 @@ df_rating.info()
 df_rating = df_rating.sample(frac=1, random_state=42)
 df_rating
 
-"""#### Split Data"""
+"""#### Normaliasasi Rating TES"""
 
 min_rating = df_rating['rating'].min()
 max_rating = df_rating['rating'].max()
@@ -399,6 +412,8 @@ x = df_rating[['userId', 'movieId']].values
 
 # Membuat variabel y untuk membuat rating dari hasil
 y = df_rating['rating'].apply(lambda x: (x - min_rating) / (max_rating - min_rating)).values
+
+"""#### Split Data"""
 
 # Membagi menjadi 80% data train dan 20% data validasi
 train_indices = int(0.8 * df_rating.shape[0])
@@ -437,8 +452,33 @@ num_movies = len(movie_ids)
 
 ## Content-Based Filtering
 
-### Cosine Similarity
+### Menggabungkan Genre dan Tag
 """
+
+# Gabungkan genre dan tag (TF-IDF)
+
+# Align genres_df with tags_per_movie by merging on movieId
+# First, ensure genres_df has movieId for merging
+# Since genres_df was created from full_data, we need the movieId from full_data
+genres_df_with_movieId = full_data[['movieId']].reset_index(drop=True).join(genres_df)
+
+# Now merge with tags_per_movie to get genres for unique movies
+# Use left merge to keep all movies from tags_per_movie
+genres_aligned_with_tags = pd.merge(tags_per_movie[['movieId']], genres_df_with_movieId.drop_duplicates(subset=['movieId']), on='movieId', how='left')
+
+# Drop the movieId column from genres_aligned_with_tags to get just the genre values
+genres_aligned_values = genres_aligned_with_tags.drop(columns=['movieId']).values
+
+# Now concatenate the aligned genre features with the TF-IDF matrix
+# Handle potential NaN values in genres after the merge if a movie in tags_per_movie had no genre
+genres_aligned_values = np.nan_to_num(genres_aligned_values)
+
+
+combined_features = np.hstack([genres_aligned_values, tfidf_matrix.toarray()])
+
+print(f"Shape combined features: {combined_features.shape}")
+
+"""### Cosine Similarity"""
 
 cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 print(f"Shape cosine similarity matrix: {cosine_sim.shape}")
@@ -465,6 +505,14 @@ Keterangan:
 - $ A \cdot B $: dot product antara vektor A dan B  
 - $ \|A\| $: panjang (norma) dari vektor A  
 - $ \|B\| $: panjang (norma) dari vektor B
+
+### Cosine Similarity (Tag and Genre)
+"""
+
+# Hitung cosine similarity berdasarkan fitur gabungan
+cosine_sim_combined = cosine_similarity(combined_features, combined_features)
+
+"""Cosine Similarity digunakan untuk mengukur seberapa mirip dua film berdasarkan sudut antara vektor fitur mereka. Nilai cosine similarity berkisar antara 0 (tidak mirip) dan 1 (sangat mirip).
 
 ### Inferensi
 """
@@ -516,6 +564,60 @@ def recommend_by_title_tag():
 
 # Jalankan fungsi input rekomendasi
 recommend_by_title_tag()
+
+"""### Inferensi (Tag dan Genre)"""
+
+from os.path import join
+def get_recommendations_by_genre_and_tag(movie_id, top_n=5):
+    # Cari indeks film berdasarkan movieId
+    idx = tags_per_movie[tags_per_movie['movieId'] == movie_id].index[0]
+
+    # Hitung similarity antar film berdasarkan fitur gabungan genre dan tag
+    sim_scores = list(enumerate(cosine_sim_combined[idx]))
+
+    # Urutkan berdasarkan similarity tertinggi
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+
+    # Ambil top-n film paling mirip, kecuali film itu sendiri
+    sim_scores = sim_scores[1:top_n+1]
+
+    # Ambil indeks film rekomendasi
+    movie_indices = [i[0] for i in sim_scores]
+
+    # Ambil movieId dan judul film dari dataframe movies
+    recommended_ids = tags_per_movie.iloc[movie_indices]['movieId'].values
+    recommended_movies = movies[movies['movieId'].isin(recommended_ids)][['movieId', 'title', 'genres']].drop_duplicates()
+
+    return recommended_movies
+
+def recommend_by_title_genre_tag():
+    # Input judul film dari pengguna
+    movie_name = input("Masukkan judul film: ").strip().lower()
+
+    # Cari movieId berdasarkan judul film (case insensitive)
+    matched = movies[movies['title'].str.lower() == movie_name]
+
+    if matched.empty:
+        print(f"Film dengan judul '{movie_name}' tidak ditemukan. Coba lagi.")
+        return
+
+    # Dapatkan movieId untuk film yang dipilih
+    movie_id = matched.iloc[0]['movieId']
+    print(f"Film yang dipilih: {matched.iloc[0]['title']}")
+
+    # Dapatkan rekomendasi film berdasarkan genre dan tag
+    recommendations = get_recommendations_by_genre_and_tag(movie_id)
+
+    if recommendations.empty:
+        print("Tidak ada rekomendasi yang tersedia.")
+    else:
+        print("Rekomendasi film serupa berdasarkan genre dan tag:")
+        for idx, row in recommendations.iterrows():
+            print(f"- {row['title']} (movieId: {row['movieId']}), Genre: {row['genres']}")
+
+"""Fungsi ini menerima movie_id dan mengembalikan top_n film yang paling mirip berdasarkan genre dan tag. Similarity dihitung berdasarkan cosine similarity antara film yang dipilih dan film lainnya."""
+
+recommend_by_title_genre_tag()
 
 """## Collaborative Filterring
 
@@ -680,103 +782,24 @@ recommend_collaborative()
 
 """## Evaluasi
 
-### Content-Based Filtering
+### CBF (Tag and Genre)
 
 #### Precision
 
-**Precision@5** mengukur seberapa banyak rekomendasi yang relevan di antara 5 rekomendasi teratas yang diberikan oleh sistem. Dengan nilai **0.2000**, artinya **20%** dari rekomendasi teratas adalah relevan, sementara sisanya tidak relevan.
-
-
-Formula Precision@5:
-
-$$
-\text{Precision@5} = \frac{\text{Jumlah rekomendasi relevan}}{5}
-$$
+**Precision@5** mengukur seberapa banyak rekomendasi yang relevan di antara 5 rekomendasi teratas yang diberikan oleh sistem.
 """
 
-# Fungsi untuk menghitung Precision@K
-def evaluate_precision_at_k(user_id, movie_id, top_n=5):
-    recommended_movies = get_recommendations_by_tag(movie_id, top_n)
+## Menampilkan dataframe yang memiliki title Toy Story
+print(movies.loc[movies['title'].str.contains('Toy Story', case=False), ['title', 'genres']])
 
-    # Ambil film yang disukai oleh pengguna (relevan)
-    liked_movies = full_data[full_data['userId'] == user_id]['movieId'].tolist()
 
-    # Hitung berapa banyak rekomendasi yang relevan
-    relevant_movies = [movie for movie in recommended_movies['movieId'] if movie in liked_movies]
+recommend_by_title_genre_tag()
 
-    precision_at_k = len(relevant_movies) / top_n
-    print(f"Precision@{top_n}: {precision_at_k:.4f}")
-    return precision_at_k
+"""Hasil rekomendasi: 5 Movies
 
-"""#### Recall
+Mengandung Genre Sesuai ( Adventure|Animation|Children|Comedy|Fantasy) : 5 Movies
 
-**Recall@K** mengukur seberapa banyak **rekomendasi relevan** yang berhasil ditemukan oleh model dari seluruh **film relevan yang disukai oleh pengguna**. Dengan kata lain, Recall mengukur kemampuan model dalam **menemukan** film relevan yang seharusnya ditampilkan kepada pengguna.
-
-$$
-\text{Recall@K} = \frac{\text{Jumlah rekomendasi relevan}}{\text{Jumlah film relevan yang disukai pengguna}}
-$$
-"""
-
-# Fungsi untuk menghitung Recall@K
-def evaluate_recall_at_k(user_id, movie_id, top_n=5):
-    recommended_movies = get_recommendations_by_tag(movie_id, top_n)
-
-    # Ambil film yang disukai oleh pengguna (relevan)
-    liked_movies = full_data[full_data['userId'] == user_id]['movieId'].tolist()
-
-    # Hitung berapa banyak rekomendasi relevan yang ditemukan
-    relevant_movies = [movie for movie in recommended_movies['movieId'] if movie in liked_movies]
-
-    recall_at_k = len(relevant_movies) / len(liked_movies)
-    print(f"Recall@{top_n}: {recall_at_k:.4f}")
-    return recall_at_k
-
-"""#### F1-Score
-
-**F1-Score** adalah rata-rata harmonis antara **Precision** dan **Recall**. F1-Score memberikan gambaran yang lebih seimbang antara kemampuan model untuk memberikan rekomendasi relevan (Precision) dan kemampuan model untuk menemukan semua rekomendasi relevan yang ada (Recall).
-
-Formula:
-$$
-\text{F1-SCORE} = 2\frac{\text{Precision x Recall}}{\text{Precision + Recall}}
-$$
-"""
-
-def evaluate_f1_score(user_id, movie_id, top_n=5):
-    recommended_movies = get_recommendations_by_tag(movie_id, top_n)
-
-    # Ambil film yang disukai oleh pengguna (relevan)
-    liked_movies = full_data[full_data['userId'] == user_id]['movieId'].tolist()
-
-    # Tentukan relevansi rekomendasi (1 = relevan, 0 = tidak relevan)
-    relevant_movies = [1 if movie in liked_movies else 0 for movie in recommended_movies['movieId']]
-
-    # Sesuaikan panjang antara relevant_movies dan true_labels (film relevan yang disukai)
-    true_labels = [1] * len(relevant_movies)  # Semua film yang relevan adalah label 1
-
-    # Pastikan panjangnya sama dengan rekomendasi yang ada
-    true_labels = true_labels[:len(relevant_movies)]
-
-    f1 = f1_score(true_labels, relevant_movies, average='micro')
-    print(f"F1-Score@{top_n}: {f1:.4f}")
-    return f1
-
-"""#### Hasil"""
-
-full_data.head()
-
-user_id_test = 1
-movie_id_test = 47
-
-# Evaluasi Precision@5
-evaluate_precision_at_k(user_id_test, movie_id_test, top_n=5)
-
-# Evaluasi Recall@5
-evaluate_recall_at_k(user_id_test, movie_id_test, top_n=5)
-
-# Evaluasi F1-Score@5
-evaluate_f1_score(user_id_test, movie_id_test, top_n=5)
-
-"""Hasil evaluasi yang kamu tunjukkan menunjukkan bahwa Precision@5, Recall@5, dan F1-Score@5 memiliki nilai yang relatif rendah, yang mengindikasikan bahwa sistem rekomendasi berbasis Content-Based Filtering (CBF) yang menggunakan tag masih perlu diperbaiki karena tag yang yang diberikan pada user masih sedikit dan banyak movie yang tidak terdapat tag.
+Precision = 5/5 = 100%
 
 ### Collaborative Filtering
 
@@ -807,4 +830,4 @@ train_rmse = np.sqrt(mean_squared_error(y_train, train_pred))
 
 print(f"RMSE pada data training: {train_rmse:.4f}")
 
-"""Perbedaan RMSE antara data training **(0.2459**)** dan data testing **(0.2298)** menunjukkan bahwa model memiliki sedikit overfitting, karena RMSE pada data testing lebih kecil daripada pada data training. Ini bisa berarti model telah terlatih dengan sangat baik pada data training, tetapi sedikit lebih kesulitan dalam menggeneralisasi pada data baru."""
+"""Perbedaan RMSE antara data training **(0.2459)** dan data testing **(0.2298)** menunjukkan bahwa model memiliki sedikit overfitting, karena RMSE pada data testing lebih kecil daripada pada data training. Ini bisa berarti model telah terlatih dengan sangat baik pada data training, tetapi sedikit lebih kesulitan dalam menggeneralisasi pada data baru."""

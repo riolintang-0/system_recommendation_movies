@@ -222,6 +222,8 @@ Hasil:
 
 ### Tags Variable
 
+#### 1. Menggabungkan tag yang diberikan user pada movies yang sama menjadi list String
+
 ![Tags Users Agg](img/tags_prep_info_user.jpg)
 
 Fungsi diatas untuk mengetahui apakah `users` dapat memberikan `tags` pada `movies` yang sama lebih dari satu atau tidak (unique).
@@ -237,7 +239,7 @@ tags_agg = tags.groupby(['userId', 'movieId'])['tag'].apply(lambda x: ','.join(x
 Hasil : 
 ![After Agg](img/tags_prep_after_agg.jpg)
 
-Hasil diatas pada kolom `tags` memuat kumpulan `tags` yang diberikan `users` pada `movies` yang sama.
+Hasil diatas pada kolom `tags` memuat kumpulan `tag` yang diberikan `users` pada `movies` yang sama dalam bentuk list String.
 
 ---
 
@@ -322,8 +324,21 @@ df_rating = df_rating.sample(frac=1, random_state=42)
 ```
 Dengan menggunakan parameter `frac=1` dan `random_state=42` mengacak data rating untuk menghindari pengaruh dari pengguna yang memiliki rating yang banyak
 
+#### 2. Normalisasi Rating
 
-#### 2. Data Split
+```
+min_rating = df_rating['rating'].min()
+max_rating = df_rating['rating'].max()
+
+# Membuat variabel x untuk mencocokkan data user dan movie menjadi satu value
+x = df_rating[['userId', 'movieId']].values
+
+# Membuat variabel y untuk membuat rating dari hasil
+y = df_rating['rating'].apply(lambda x: (x - min_rating) / (max_rating - min_rating)).values
+```
+
+
+#### 3. Data Split
 
 ```
 train_indices = int(0.8 * df_rating.shape[0])
@@ -339,7 +354,7 @@ Dataset dibagi menjadi data *training* dan *testing* dengan rasio **80%** untuk 
 
 
 
-#### 3. Mapping User dan Movie
+#### 4. Mapping User dan Movie
 
 ```
 # Mapping userId dan movieId ke indeks embedding
@@ -379,9 +394,9 @@ Nilai berada di antara `-1` hingga `1`:
 
 **Rumus Cosine Similarity**
 
-$$
-\text{cosine_similarity}(A, B) = \frac{A \cdot B}{\|A\| \times \|B\|}
-$$
+```math
+\text{cosine\_similarity}(A,B) = \frac{A \cdot B}{\|A\| \times \|B\|}
+````
 
 Keterangan:
 - $ A \cdot B $: dot product antara vektor A dan B  
@@ -525,6 +540,7 @@ $$
 **F1-Score** adalah rata-rata harmonis antara **Precision** dan **Recall**. F1-Score memberikan gambaran yang lebih seimbang antara kemampuan model untuk memberikan rekomendasi relevan (Precision) dan kemampuan model untuk menemukan semua rekomendasi relevan yang ada (Recall).
 
 #### Formula:
+
 $$
 \text{F1-SCORE} = 2\frac{\text{Precision x Recall}}{\text{Precision + Recall}}
 $$
