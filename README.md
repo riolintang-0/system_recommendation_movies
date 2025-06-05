@@ -1,4 +1,4 @@
-# *Prediksi Penyakit Diabetes Menggunakan Machine Learning*
+# *Movies Rekomendation*
 ---
 ## Domain Proyek
 
@@ -17,13 +17,11 @@ referensi:
 
 1. Pengguna kesulitan memilih film yang sesuai dengan selera mereka di platform streaming.
 2. Data rating saja tidak cukup untuk memberikan rekomendasi yang relevan karena bisa bias.
-3. Tren sosial media belum dimanfaatkan secara maksimal dalam sistem rekomendasi.
 
 ### Goals
 
-1. Membangun sistem rekomendasi film yang menggabungkan rating pengguna, analisis sentimen review, dan tren sosial media.
-2. Memastikan rekomendasi yang diberikan lebih relevan dengan selera pengguna dan tren terkini.
-3. Mengurangi bias dalam rekomendasi dengan memanfaatkan data sosial media.
+1. Membangun sistem rekomendasi film yang menggabungkan rating pengguna dan genre movies.
+2. Memastikan rekomendasi yang diberikan lebih relevan dengan selera pengguna.
 
 ### Solution Approach
 
@@ -168,7 +166,7 @@ Analisis EDA pada ketiga variabel utama (`ratings`, `movies`, dan `tags`) member
 ```
 # Memisahkan genres kedalam daftar list
 
-movies['genres'] = movies['genres'].str.split('|')
+movies['genres_list'] = movies['genres'].str.split('|')
 
 ```
 Hasil : 
@@ -325,14 +323,14 @@ TF-IDF digunakan untuk mengubah data `tag` menjadi matriks vektor yang dapat dig
 
 ```
 mlb = MultiLabelBinarizer()
-genres_encoded = mlb.fit_transform(full_data['genres'])
+genres_encoded = mlb.fit_transform(full_data['genres_list'])
 
 # Membuat dataframe hasil encoding genre
 genres_df = pd.DataFrame(genres_encoded, columns=mlb.classes_, index=full_data.index)
 full_data = pd.concat([full_data, genres_df], axis=1)
-full_data.drop(columns=['genres'], inplace=True)
+full_data.drop(columns=['genres_list'], inplace=True)
 ```
-Menerapkan One Hot Encoding pada kolom `genre` yang akan digabung dalam `tag` untuk Content-Based Filtering
+Menerapkan One Hot Encoding pada kolom `genre_list` yang akan digabung dalam `tag` untuk Content-Based Filtering
 
 
 #### 3. Menggabungkan Genre dan Tag

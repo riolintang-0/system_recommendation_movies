@@ -22,17 +22,16 @@ referensi:
 
 1. Pengguna kesulitan memilih film yang sesuai dengan selera mereka di platform streaming.
 2. Data rating saja tidak cukup untuk memberikan rekomendasi yang relevan karena bisa bias.
-3. Tren sosial media belum dimanfaatkan secara maksimal dalam sistem rekomendasi.
 
 ## Goals
 
-1. Membangun sistem rekomendasi film yang menggabungkan rating pengguna, analisis sentimen review, dan tren sosial media.
-2. Memastikan rekomendasi yang diberikan lebih relevan dengan selera pengguna dan tren terkini.
-3. Mengurangi bias dalam rekomendasi dengan memanfaatkan data sosial media.
+1. Membangun sistem rekomendasi film yang menggabungkan rating pengguna , tag , dan genre movies dari dataset MovieLens.
+2. Memastikan rekomendasi yang diberikan lebih relevan dengan selera pengguna.
+
 
 ## Solution Approach
 
-1. **Content-Based Filtering**: Menggunakan informasi yang ada di film, seperti genre dan deskripsi, untuk merekomendasikan film yang serupa dengan yang sudah dilihat pengguna.
+1. **Content-Based Filtering**: Menggunakan informasi yang ada di film, seperti genre dan tag, untuk merekomendasikan film yang serupa dengan yang sudah dilihat pengguna.
 2. **Collaborative Filtering**: Menggunakan data rating dari pengguna lain untuk memberikan rekomendasi berdasarkan kesamaan preferensi antar pengguna.
 
 # Data Understanding
@@ -295,11 +294,13 @@ ratings.duplicated().sum()
 
 print(tags.groupby(['userId','movieId']).size().max())
 
-"""### Menggabungkan tag yang diberikan user pada movies yang sama TES"""
+"""### Menggabungkan tag yang diberikan user pada movies yang sama"""
 
 tags_agg = tags.groupby(['userId', 'movieId'])['tag'].apply(lambda x: ','.join(x.unique())).reset_index()
 
 tags_agg.head()
+
+"""#### Memberikan nilai missing value pada kolom Tag"""
 
 tags_agg['tag'] = tags_agg['tag'].fillna('no_tag')
 
@@ -341,17 +342,18 @@ full_data.head()
 """
 
 mlb = MultiLabelBinarizer()
-genres_encoded = mlb.fit_transform(full_data['genres'])
+genres_encoded = mlb.fit_transform(full_data['genres_list'])
 
 # Membuat dataframe hasil encoding genre
 genres_df = pd.DataFrame(genres_encoded, columns=mlb.classes_, index=full_data.index)
 full_data = pd.concat([full_data, genres_df], axis=1)
-full_data.drop(columns=['genres'], inplace=True)
+full_data.drop(columns=['genres_list'], inplace=True)
 
-"""Menerapkan One Hot Encoding pada kolom `genre`
+"""Menerapkan One Hot Encoding pada kolom `genre`"""
 
-### Menggabungkan Tags ke dalam satu string
-"""
+full_data.head()
+
+"""### Menggabungkan Tags ke dalam satu string"""
 
 def clean_and_join_tags(tag_lists):
     """
@@ -427,7 +429,7 @@ df_rating.info()
 df_rating = df_rating.sample(frac=1, random_state=42)
 df_rating
 
-"""#### Normaliasasi Rating TES"""
+"""#### Normaliasasi Rating"""
 
 min_rating = df_rating['rating'].min()
 max_rating = df_rating['rating'].max()
